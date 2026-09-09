@@ -10,6 +10,7 @@ const { ClientManager } = require('./ClientManager');
 const { ClientDiagnostics } = require('./ClientDiagnostics');
 const { ClientExpiryService } = require('./ClientExpiryService');
 const { DiscoveryRelay } = require('./DiscoveryRelay');
+const { ExpiryPortalServer } = require('./ExpiryPortalServer');
 const { HttpServer } = require('./HttpServer');
 const { PasswordManager } = require('./PasswordManager');
 const { runProcess } = require('./ProcessRunner');
@@ -26,21 +27,28 @@ class Application {
     fileSystem = fs,
     discoveryFactory = () => new DiscoveryRelay(),
     httpFactory = (options) => new HttpServer(options),
+    portalFactory = (options) => new ExpiryPortalServer(options),
   } = {}) {
     this.dataDirectory = path.resolve(dataDirectory);
     this.runtimeDirectory = path.resolve(runtimeDirectory);
     this.publicDirectory = path.resolve(publicDirectory);
     this.runner = runner;
     this.fs = fileSystem;
-    if (typeof discoveryFactory !== 'function' || typeof httpFactory !== 'function') {
-      throw new TypeError('discoveryFactory and httpFactory must be functions');
+    if (
+      typeof discoveryFactory !== 'function'
+      || typeof httpFactory !== 'function'
+      || typeof portalFactory !== 'function'
+    ) {
+      throw new TypeError('discoveryFactory, httpFactory and portalFactory must be functions');
     }
     this.discoveryFactory = discoveryFactory;
     this.httpFactory = httpFactory;
+    this.portalFactory = portalFactory;
     this.store = new StateStore(path.join(this.dataDirectory, 'state.json'));
     this.applier = new RuntimeApplier({ runtimeDirectory: this.runtimeDirectory, runner });
     this.http = null;
     this.http6 = null;
+    this.expiryPortal = null;
     this.discovery = null;
     this.expiryService = null;
     this.state = null;
@@ -128,6 +136,12 @@ class Application {
       const api = new ApiService({ store: this.store, passwordManager, sessionManager, clientManager, diagnostics });
       this.http = this.httpFactory({ api, publicDirectory: this.publicDirectory });
       const listening = await this.http.listen({ host: state.server.address4, port: state.server.panelPort });
+      this.expiryPortal = this.portalFactory({
+      store: this.store,
+      publicAddress: state.server.address4,
+    });
+      await this.expiryPortal.listen({ host: state.server.address4, port: 51822 });
+
       if (state.server.address6 && state.server.ipv6Subnet) {
         this.http6 = this.httpFactory({ api, publicDirectory: this.publicDirectory });
         await this.http6.listen({ host: state.server.address6, port: state.server.panelPort });
@@ -147,6 +161,7 @@ class Application {
 
   async stop() {
     const errors = [];
+    if (this.expiryPortal) await this.expiryPortal.close().catch((error) => errors.push(error));
     if (this.http) await this.http.close().catch((error) => errors.push(error));
     if (this.http6) await this.http6.close().catch((error) => errors.push(error));
     if (this.expiryService) await this.expiryService.stop().catch((error) => errors.push(error));

@@ -58,16 +58,20 @@ const renderNftablesPolicy = ({
   nat66 = false,
   home4,
   guest4,
+  expired4 = [],
   home6 = [],
   guest6 = [],
   panelPort = 51821,
+  portalAddress4 = "10.8.0.1",
 }) => {
   const awg = validateInterface(interfaceName);
   const wan = validateInterface(wanInterface);
   const subnet4 = validateCidr(ipv4Subnet, 4, 'ipv4Subnet');
+  const normalizedPortalAddress4 = validateAddress(portalAddress4, 4, 'portalAddress4');
   const subnet6 = ipv6Subnet === undefined ? undefined : validateCidr(ipv6Subnet, 6, 'ipv6Subnet');
   const normalizedHome4 = validateAddressList(home4, 4, 'home4');
   const normalizedGuest4 = validateAddressList(guest4, 4, 'guest4');
+  const normalizedExpired4 = validateAddressList(expired4, 4, 'expired4');
   const normalizedHome6 = validateAddressList(home6, 6, 'home6');
   const normalizedGuest6 = validateAddressList(guest6, 6, 'guest6');
   if (typeof nat66 !== 'boolean') throw new TypeError('nat66 must be a boolean');
@@ -80,6 +84,8 @@ const renderNftablesPolicy = ({
     throw new TypeError('IPv6 peers require ipv6Subnet');
   }
   const overlaps = normalizedHome4.filter((address) => normalizedGuest4.includes(address));
+  const overlapsExpired = normalizedExpired4.filter((address) => [...normalizedHome4, ...normalizedGuest4].includes(address));
+  if (overlapsExpired.length > 0) throw new TypeError("Peers cannot be both active and expired: " + overlapsExpired.join(", "));
   if (overlaps.length > 0) throw new TypeError(`Peers cannot be both home and guest: ${overlaps.join(', ')}`);
   const overlaps6 = normalizedHome6.filter((address) => normalizedGuest6.includes(address));
   if (overlaps6.length > 0) throw new TypeError(`IPv6 peers cannot be both home and guest: ${overlaps6.join(', ')}`);
@@ -138,16 +144,27 @@ table inet ${TABLE_NAME} {
   set guest4 {
     type ipv4_addr${elementsClause(normalizedGuest4)}
   }
+
+  set expired4 {
+    type ipv4_addr${elementsClause(normalizedExpired4)}
+  }
 ${ipv6Sets}
+  chain prerouting {
+    type nat hook prerouting priority dstnat; policy accept;
+    iifname ${quote(awg)} ip saddr @expired4 tcp dport 80 dnat to ${normalizedPortalAddress4}:51822 comment "expired peers HTTP portal"
+  }
+
   chain client_permissions {
-    iifname ${quote(awg)} ip saddr != @active4 drop comment "IPv4 permission: from VPN client"
-    oifname ${quote(awg)} ip daddr != @active4 drop comment "IPv4 permission: to VPN client"${ipv6PermissionRules}
+    iifname ${quote(awg)} ip saddr != @active4 ip saddr != @expired4 drop comment "IPv4 permission: from VPN client"
+    oifname ${quote(awg)} ip daddr != @active4 ip daddr != @expired4 drop comment "IPv4 permission: to VPN client"${ipv6PermissionRules}
   }
 
   chain input {
     type filter hook input priority -10; policy accept;
     jump client_permissions
+    iifname ${quote(awg)} ip saddr @expired4 tcp dport 51822 accept comment "expired peers may access the expiry portal"
     iifname ${quote(awg)} ip saddr @guest4 ip daddr ${subnet4} drop comment "guest peers cannot access AWG-Easy 3 services"
+    iifname ${quote(awg)} ip saddr @expired4 ip daddr ${subnet4} drop comment "expired peers cannot access AWG-Easy 3 services"
     iifname ${quote(awg)} ip saddr @home4 tcp dport ${port} accept comment "home peers may access the panel"${ipv6InputRules}
   }
 
@@ -156,6 +173,7 @@ ${ipv6Sets}
     jump client_permissions
     iifname ${quote(awg)} oifname ${quote(awg)} ip saddr @home4 ip daddr @home4 accept comment "home peer traffic"${ipv6HomeForwardRule}
     iifname ${quote(awg)} oifname ${quote(awg)} drop comment "isolate guest peers"
+    iifname ${quote(awg)} oifname ${quote(wan)} ip saddr @expired4 drop comment "expired peers cannot access WAN"
     iifname ${quote(awg)} oifname ${quote(wan)} ip saddr ${subnet4} accept comment "AWG IPv4 to WAN"
     iifname ${quote(wan)} oifname ${quote(awg)} ip daddr ${subnet4} ct state established,related accept comment "return IPv4 traffic"${ipv6ForwardRules}
   }

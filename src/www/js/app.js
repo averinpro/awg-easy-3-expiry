@@ -65,18 +65,59 @@
     return t('minutesAgo', { count: Math.floor(seconds / 60) });
   };
 
+  const localDateParts = (date = new Date()) => {
+    const pad = (value) => String(value).padStart(2, "0");
+    return {
+      date: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+      time: `${pad(date.getHours())}:${pad(date.getMinutes())}`,
+    };
+  };
+
+  const dateTimeInputsToExpiry = (dateValue, timeValue) => {
+    if (!dateValue) return null;
+    const [year, month, day] = dateValue.split("-").map(Number);
+    const [hour = 23, minute = 59] = (timeValue || "23:59").split(":").map(Number);
+    const date = new Date(year, month - 1, day, hour, minute, 59, 999);
+    return Number.isNaN(date.getTime()) ? null : date.getTime();
+  };
+
+  const expiryToInputs = (expiresAt) => {
+    const date = new Date(expiresAt);
+    if (Number.isNaN(date.getTime())) return null;
+    return localDateParts(date);
+  };
+
+  const addCalendarMonth = (timestamp) => {
+    const source = new Date(timestamp);
+    const date = new Date(source.getTime());
+    const originalDay = source.getDate();
+
+    date.setDate(1);
+    date.setMonth(date.getMonth() + 1);
+
+    const lastDay = new Date(
+      date.getFullYear(),
+      date.getMonth() + 1,
+      0
+    ).getDate();
+
+    date.setDate(Math.min(originalDay, lastDay));
+    return date.getTime();
+  };
+
   const formatExpiry = (expiresAt) => {
     if (expiresAt === null || expiresAt === undefined) return t('expiryNever');
     const date = new Date(expiresAt);
     if (Number.isNaN(date.getTime())) return t('expiryNever');
-    return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+    return new Intl.DateTimeFormat(undefined, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date);
   };
-  const dateInputToExpiry = (value) => {
-    if (!value) return null;
-    const [year, month, day] = value.split("-").map(Number);
-    const date = new Date(year, month - 1, day, 23, 59, 59, 999);
-    return Number.isNaN(date.getTime()) ? null : date.getTime();
-  };
+
 
   const paintDiagnostics = (item) => {
     const node = clientsNode.querySelector(`[data-client-id="${CSS.escape(item.id)}"]`);
@@ -185,6 +226,22 @@
     node.querySelector('.ipv6-only-warning').classList.toggle('hidden', !client.ipv6Enabled || client.ipv4Enabled);
     node.querySelector('.show-profile').addEventListener('click', () => openProfile(client));
     node.querySelector('.expiry-edit').addEventListener('click', () => openExpiry(client));
+
+    node.querySelector('.expiry-plus-month').addEventListener('click', async () => {
+      const base = client.expiresAt && client.expiresAt > Date.now() ? client.expiresAt : Date.now();
+      const expiresAt = addCalendarMonth(base);
+
+      try {
+        await guarded(() => api.updateClient(client.id, {
+          expiresAt,
+          ...(client.expiresAt && client.expiresAt <= Date.now() ? { enabled: true } : {}),
+        }));
+        await loadClients();
+      } catch (error) {
+        showNotice(errorMessage(error), true);
+        await loadClients().catch(() => {});
+      }
+    });
     node.querySelector('.delete-client').addEventListener('click', () => askDelete(client));
     return node;
   };
@@ -210,21 +267,21 @@
 
     const select = $('#edit-client-expiry');
     const dateInput = $('#edit-client-expiry-date');
+    const timeInput = $('#edit-client-expiry-time');
     const wrap = $('#edit-client-expiry-date-wrap');
 
     if (client.expiresAt === null || client.expiresAt === undefined) {
       select.value = 'never';
       dateInput.value = '';
+      timeInput.value = '23:59';
       wrap.classList.add('hidden');
     } else {
       select.value = 'date';
 
-      const date = new Date(client.expiresAt);
-      if (!Number.isNaN(date.getTime())) {
-        const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
-          .toISOString()
-          .slice(0, 10);
-        dateInput.value = localDate;
+      const inputs = expiryToInputs(client.expiresAt);
+      if (inputs) {
+        dateInput.value = inputs.date;
+        timeInput.value = inputs.time;
       }
 
       wrap.classList.remove('hidden');
@@ -238,15 +295,16 @@
     const isDate = $('#edit-client-expiry').value === 'date';
     const wrap = $('#edit-client-expiry-date-wrap');
     const dateInput = $('#edit-client-expiry-date');
+    const timeInput = $('#edit-client-expiry-time');
 
     wrap.classList.toggle('hidden', !isDate);
 
-    if (isDate && !dateInput.value) {
-      const today = new Date();
-      const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
-        .toISOString()
-        .slice(0, 10);
-      dateInput.min = localDate;
+    if (isDate) {
+      const now = new Date();
+      const inputs = localDateParts(now);
+      dateInput.min = inputs.date;
+      if (!dateInput.value) dateInput.value = inputs.date;
+      if (!timeInput.value) timeInput.value = '23:59';
     }
   });
 
@@ -302,16 +360,17 @@
   $('#client-expiry').addEventListener('change', () => {
     const wrap = $('#client-expiry-date-wrap');
     const dateInput = $('#client-expiry-date');
+    const timeInput = $('#client-expiry-time');
     const isDate = $('#client-expiry').value === 'date';
 
     wrap.classList.toggle('hidden', !isDate);
 
-    if (isDate && !dateInput.value) {
-      const today = new Date();
-      const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
-        .toISOString()
-        .slice(0, 10);
-      dateInput.min = localDate;
+    if (isDate) {
+      const now = new Date();
+      const inputs = localDateParts(now);
+      dateInput.min = inputs.date;
+      if (!dateInput.value) dateInput.value = inputs.date;
+      if (!timeInput.value) timeInput.value = '23:59';
     }
   });
 
@@ -324,7 +383,9 @@
     }
     try {
       const expiryMode = $('#client-expiry').value;
-      const expiresAt = expiryMode === 'date' ? dateInputToExpiry($('#client-expiry-date').value) : null;
+      const expiresAt = expiryMode === 'date'
+        ? dateTimeInputsToExpiry($('#client-expiry-date').value, $('#client-expiry-time').value)
+        : null;
       if (expiryMode === 'date' && expiresAt === null) {
         showNotice(t('expiryDateRequired'), true);
         return;
@@ -349,7 +410,7 @@
 
     const expiryMode = $('#edit-client-expiry').value;
     const expiresAt = expiryMode === 'date'
-      ? dateInputToExpiry($('#edit-client-expiry-date').value)
+      ? dateTimeInputsToExpiry($('#edit-client-expiry-date').value, $('#edit-client-expiry-time').value)
       : null;
 
     if (expiryMode === 'date' && expiresAt === null) {
@@ -365,6 +426,23 @@
       showNotice(errorMessage(error), true);
       await loadClients().catch(() => {});
     }
+  });
+
+  $('#expiry-plus-month-dialog').addEventListener('click', () => {
+    const current = dateTimeInputsToExpiry(
+      $('#edit-client-expiry-date').value,
+      $('#edit-client-expiry-time').value,
+    );
+    const base = current && current > Date.now() ? current : Date.now();
+    const expiresAt = addCalendarMonth(base);
+    const inputs = expiryToInputs(expiresAt);
+
+    if (!inputs) return;
+
+    $('#edit-client-expiry').value = 'date';
+    $('#edit-client-expiry-date-wrap').classList.remove('hidden');
+    $('#edit-client-expiry-date').value = inputs.date;
+    $('#edit-client-expiry-time').value = inputs.time;
   });
 
   $('#cancel-expiry').addEventListener('click', () => {

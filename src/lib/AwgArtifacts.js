@@ -6,6 +6,7 @@ const { buildClientRoutes } = require('./ClientRoutes');
 const { buildDnsPolicy } = require('./DnsPolicy');
 const { renderNftablesPolicy } = require('./NftablesPolicy');
 const { clientTraffic } = require('./ClientTraffic');
+const { isExpired } = require('./ClientExpiry');
 
 const peerAddresses = (client, serverHasIPv6) => [
   `${client.address4}/32`,
@@ -21,6 +22,8 @@ const buildAwgArtifacts = ({ server, clients }) => {
   }
 
   const enabledClients = clients.filter((client) => clientTraffic(client).enabled);
+  const expiredClients = clients.filter((client) => isExpired(client.expiresAt));
+  const runtimeClients = [...new Map([...enabledClients, ...expiredClients].map((client) => [client.id, client])).values()];
   const activeHomes = enabledClients.filter((client) => client.networkGroup === 'home');
   if (activeHomes.length === 0) throw new Error('At least one enabled home client is required');
 
@@ -35,7 +38,7 @@ const buildAwgArtifacts = ({ server, clients }) => {
     addresses: serverAddresses,
     listenPort: server.listenPort,
     profile: server.profile,
-    peers: enabledClients.map((client) => ({
+    peers: runtimeClients.map((client) => ({
       name: client.name,
       publicKey: client.publicKey,
       presharedKey: client.presharedKey,
@@ -50,7 +53,9 @@ const buildAwgArtifacts = ({ server, clients }) => {
     ...(serverHasIPv6 ? { ipv6Subnet: server.ipv6Subnet } : {}),
     nat66: serverHasIPv6 && server.ipv6Mode === 'nat66',
     panelPort: server.panelPort ?? 51821,
+    portalAddress4: server.address4,
     home4: activeHomes.filter((client) => clientTraffic(client).ipv4Enabled).map((client) => client.address4),
+    expired4: expiredClients.filter((client) => client.address4).map((client) => client.address4),
     guest4: enabledClients.filter((client) => client.networkGroup === 'guest' && clientTraffic(client).ipv4Enabled)
       .map((client) => client.address4),
     home6: serverHasIPv6 ? activeHomes.filter((client) => clientTraffic(client).ipv6Enabled)

@@ -127,3 +127,39 @@ test('refuses destructive statements in externally supplied policy text', () => 
     /forbidden destructive/,
   );
 });
+
+test('adds HTTP expiry portal DNAT for expired peers', () => {
+  const policy = renderNftablesPolicy({
+    interfaceName: 'awg0',
+    wanInterface: 'eth0',
+    ipv4Subnet: '10.8.0.0/24',
+    portalAddress4: '10.8.0.1',
+    panelPort: 51821,
+    home4: ['10.8.0.2'],
+    guest4: [],
+    expired4: ['10.8.0.3'],
+  });
+
+  assert.match(
+    policy,
+    /chain prerouting \{\s*type nat hook prerouting priority dstnat; policy accept;\s*iifname "awg0" ip saddr @expired4 tcp dport 80 dnat to 10\.8\.0\.1:51822/,
+  );
+});
+
+test('allows server responses to expired peers', () => {
+  const policy = renderNftablesPolicy({
+    interfaceName: 'awg0',
+    wanInterface: 'eth0',
+    ipv4Subnet: '10.8.0.0/24',
+    portalAddress4: '10.8.0.1',
+    panelPort: 51821,
+    home4: ['10.8.0.2'],
+    guest4: [],
+    expired4: ['10.8.0.3'],
+  });
+
+  assert.match(
+    policy,
+    /oifname "awg0" ip daddr != @active4 ip daddr != @expired4 drop comment "IPv4 permission: to VPN client"/,
+  );
+});

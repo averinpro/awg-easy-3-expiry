@@ -196,8 +196,12 @@ test('permission gates precede all permits on input, forward and output and stay
   const gate = nftables.match(/chain client_permissions \{([^]*?)\n  \}/)[1];
   assert.equal(gate.trim().split('\n').length, 4);
   for (const [family, qualifier] of [[4, 'ip'], [6, 'ip6']]) {
-    assert.ok(gate.includes(`iifname "awg0" ${qualifier} saddr != @active${family} drop`));
-    assert.ok(gate.includes(`oifname "awg0" ${qualifier} daddr != @active${family} drop`));
+    if (family === 4) assert.match(gate, /iifname "awg0" ip saddr != @active4 ip saddr != @expired4 drop/); else assert.match(gate, /iifname "awg0" ip6 saddr != @active6 drop/);
+    if (family === 4) {
+      assert.match(gate, /oifname "awg0" ip daddr != @active4 ip daddr != @expired4 drop/);
+    } else {
+      assert.match(gate, /oifname "awg0" ip6 daddr != @active6 drop/);
+    }
   }
   assert.doesNotMatch(nftables, /flush ruleset/);
 });
@@ -279,6 +283,10 @@ test('panel binds only the two internal addresses, shares API, and cleans up aft
         }, close: async () => { closed.push(index); } };
       },
       discoveryFactory: () => ({ start: async () => {}, stop: async () => shutdown.push('discovery') }),
+      portalFactory: () => ({
+        listen: async () => ({ address: '10.8.0.1', port: 51822 }),
+        close: async () => { closed.push(2); },
+      }),
     });
     application.store = { load: async () => state, save: async (value) => value };
     application.interfaceActive = async () => false;
@@ -287,7 +295,7 @@ test('panel binds only the two internal addresses, shares API, and cleans up aft
     else { await application.start(); await application.stop(); }
     assert.deepEqual(binds, [{ host: '10.8.0.1', port: 51821 }, { host: 'fd42:8::1', port: 51821 }]);
     assert.equal(apis[0], apis[1]);
-    assert.deepEqual(closed, [0, 1]);
+    assert.deepEqual(closed, [2, 0, 1]);
     assert.deepEqual(shutdown, ['discovery', 'runtime']);
     assert.equal(application.state, null);
   }
