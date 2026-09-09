@@ -89,6 +89,67 @@ test('switches network policy and blocks unsafe fields', async () => {
   await assert.rejects(manager.updateClient('new-client', { publicKey: 'replacement' }), /cannot be changed/);
 });
 
+test('creates a client with an expiration date', async () => {
+  const { manager, getState } = fixture();
+  const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+
+  const result = await manager.createClient({
+    name: 'Temporary phone',
+    expiresAt,
+  });
+
+  assert.equal(result.client.expiresAt, expiresAt);
+  assert.equal(getState().clients[1].expiresAt, expiresAt);
+});
+
+test('updates and clears a client expiration date', async () => {
+  const { manager, getState } = fixture();
+  const firstExpiry = Date.now() + 24 * 60 * 60 * 1000;
+  const secondExpiry = Date.now() + 7 * 24 * 60 * 60 * 1000;
+
+  await manager.createClient({
+    name: 'Temporary phone',
+    expiresAt: firstExpiry,
+  });
+
+  let result = await manager.updateClient('new-client', {
+    expiresAt: secondExpiry,
+  });
+
+  assert.equal(result.client.expiresAt, secondExpiry);
+  assert.equal(getState().clients[1].expiresAt, secondExpiry);
+
+  result = await manager.updateClient('new-client', {
+    expiresAt: null,
+  });
+
+  assert.equal(result.client.expiresAt, null);
+  assert.equal(getState().clients[1].expiresAt, null);
+});
+
+test('legacy clients without an expiration date remain permanent', async () => {
+  const { manager } = fixture();
+
+  const result = await manager.updateClient('home-admin', {
+    name: 'Home admin renamed',
+  });
+
+  assert.equal(result.client.expiresAt, null);
+});
+
+test('changing expiration does not disable the last active home client', async () => {
+  const { manager } = fixture();
+  const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+
+  const result = await manager.updateClient('home-admin', {
+    expiresAt,
+  });
+
+  assert.equal(result.client.enabled, true);
+  assert.equal(result.client.networkGroup, 'home');
+  assert.equal(result.client.expiresAt, expiresAt);
+});
+
 test('protects the last active home client from update and deletion', async () => {
   const { manager } = fixture();
   await assert.rejects(manager.updateClient('home-admin', { networkGroup: 'guest' }), /home client/);

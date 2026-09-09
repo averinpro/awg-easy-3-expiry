@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — client expiration
+
+- Add optional per-client expiration dates with automatic disabling after expiration.
+- Add expiration management to the web panel, including changing and extending an existing expiration date.
+- Expose `expiresAt` through the client API and persist it in `state.json`.
+- Keep existing AWG-Easy 3 state files compatible: clients without `expiresAt` remain unlimited.
+- Check expired clients automatically once per minute without restarting the AWG interface.
+- Preserve the existing Home-client safety rule: expiration cannot leave the VPN without an enabled Home client.
+- Add expiration validation and regression coverage.
+- Translate expiration controls and status into all five supported UI languages.
+
+
 ## v0.1.3 — 2026-08-31
 
 - Replace the client enable switch with independent IPv4/IPv6 permissions. Both off removes the peer; profiles, keys, addresses, DNS and routes remain unchanged. Home/Guest stays independent.

@@ -7,6 +7,7 @@ const path = require('node:path');
 const { validateProfile } = require('./Awg3Config');
 const { normalizeClientPolicy } = require('./ClientPolicy');
 const { clientTraffic } = require('./ClientTraffic');
+const { normalizeExpiresAt } = require('./ClientExpiry');
 
 const STATE_VERSION = 1;
 
@@ -120,6 +121,7 @@ const validateState = (input) => {
       privateKey: requiredString(inputClient.privateKey, `clients[${index}].privateKey`),
       publicKey: requiredString(inputClient.publicKey, `clients[${index}].publicKey`),
       presharedKey: optionalString(inputClient.presharedKey, `clients[${index}].presharedKey`),
+      ...('expiresAt' in inputClient ? { expiresAt: normalizeExpiresAt(inputClient.expiresAt) } : {}),
       ...clientTraffic(inputClient, {
         ipv6Available: Boolean(server.address6 && server.ipv6Subnet && inputClient.address6),
       }),

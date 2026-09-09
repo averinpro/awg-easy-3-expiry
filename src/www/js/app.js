@@ -12,6 +12,7 @@
   const notice = $('#notice');
   const createDialog = $('#create-dialog');
   const profileDialog = $('#profile-dialog');
+  const expiryDialog = $('#expiry-dialog');
   const deleteDialog = $('#delete-dialog');
   const languageSelect = $('#language');
   const supportedLanguages = ['en', 'ru', 'fa', 'es', 'zh-cn'];
@@ -63,6 +64,20 @@
     if (seconds < 60) return t('secondsAgo', { count: seconds });
     return t('minutesAgo', { count: Math.floor(seconds / 60) });
   };
+
+  const formatExpiry = (expiresAt) => {
+    if (expiresAt === null || expiresAt === undefined) return t('expiryNever');
+    const date = new Date(expiresAt);
+    if (Number.isNaN(date.getTime())) return t('expiryNever');
+    return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+  };
+  const dateInputToExpiry = (value) => {
+    if (!value) return null;
+    const [year, month, day] = value.split("-").map(Number);
+    const date = new Date(year, month - 1, day, 23, 59, 59, 999);
+    return Number.isNaN(date.getTime()) ? null : date.getTime();
+  };
+
   const paintDiagnostics = (item) => {
     const node = clientsNode.querySelector(`[data-client-id="${CSS.escape(item.id)}"]`);
     if (!node) return;
@@ -147,6 +162,7 @@
     node.dataset.clientId = client.id;
     node.querySelector('.client-name').textContent = client.name;
     node.querySelector('.client-address').textContent = [client.address4, client.address6].filter(Boolean).join(' · ');
+    node.querySelector('.expiry-value').textContent = client.expiresAt && client.expiresAt <= Date.now() ? t('expiryExpired', { date: formatExpiry(client.expiresAt) }) : formatExpiry(client.expiresAt);
     const status = node.querySelector('.status');
     // Group and traffic permission are independent, including when both IP families are off.
     status.textContent = client.networkGroup === 'home' ? 'Home' : 'Guest';
@@ -168,6 +184,7 @@
     node.querySelector('.ipv6-unavailable').classList.toggle('hidden', client.ipv6Available);
     node.querySelector('.ipv6-only-warning').classList.toggle('hidden', !client.ipv6Enabled || client.ipv4Enabled);
     node.querySelector('.show-profile').addEventListener('click', () => openProfile(client));
+    node.querySelector('.expiry-edit').addEventListener('click', () => openExpiry(client));
     node.querySelector('.delete-client').addEventListener('click', () => askDelete(client));
     return node;
   };
@@ -188,6 +205,51 @@
       }
     } catch { $('#panel-ipv4').classList.add('hidden'); $('#panel-ipv6').classList.add('hidden'); }
   };
+  const openExpiry = (client) => {
+    $('#expiry-client-name').textContent = client.name;
+
+    const select = $('#edit-client-expiry');
+    const dateInput = $('#edit-client-expiry-date');
+    const wrap = $('#edit-client-expiry-date-wrap');
+
+    if (client.expiresAt === null || client.expiresAt === undefined) {
+      select.value = 'never';
+      dateInput.value = '';
+      wrap.classList.add('hidden');
+    } else {
+      select.value = 'date';
+
+      const date = new Date(client.expiresAt);
+      if (!Number.isNaN(date.getTime())) {
+        const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+          .toISOString()
+          .slice(0, 10);
+        dateInput.value = localDate;
+      }
+
+      wrap.classList.remove('hidden');
+    }
+
+    expiryDialog.dataset.clientId = client.id;
+    expiryDialog.showModal();
+  };
+
+  $('#edit-client-expiry').addEventListener('change', () => {
+    const isDate = $('#edit-client-expiry').value === 'date';
+    const wrap = $('#edit-client-expiry-date-wrap');
+    const dateInput = $('#edit-client-expiry-date');
+
+    wrap.classList.toggle('hidden', !isDate);
+
+    if (isDate && !dateInput.value) {
+      const today = new Date();
+      const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 10);
+      dateInput.min = localDate;
+    }
+  });
+
   const openProfile = (client) => {
     selectedClient = client;
     $('#profile-title').textContent = client.name;
@@ -237,6 +299,22 @@
       await loadClients().catch(() => {});
     } finally { pendingDelete = undefined; }
   });
+  $('#client-expiry').addEventListener('change', () => {
+    const wrap = $('#client-expiry-date-wrap');
+    const dateInput = $('#client-expiry-date');
+    const isDate = $('#client-expiry').value === 'date';
+
+    wrap.classList.toggle('hidden', !isDate);
+
+    if (isDate && !dateInput.value) {
+      const today = new Date();
+      const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 10);
+      dateInput.min = localDate;
+    }
+  });
+
   $('#create-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const name = $('#client-name').value.trim();
@@ -245,7 +323,13 @@
       return;
     }
     try {
-      const result = await guarded(() => api.createClient({ name, networkGroup: $('#client-group').value }));
+      const expiryMode = $('#client-expiry').value;
+      const expiresAt = expiryMode === 'date' ? dateInputToExpiry($('#client-expiry-date').value) : null;
+      if (expiryMode === 'date' && expiresAt === null) {
+        showNotice(t('expiryDateRequired'), true);
+        return;
+      }
+      const result = await guarded(() => api.createClient({ name, networkGroup: $('#client-group').value, expiresAt }));
       createDialog.close();
       event.target.reset();
       await loadClients();
@@ -254,6 +338,39 @@
       if (error.status === 409) showNotice(t('duplicateName'), true);
     }
   });
+  $('#expiry-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const clientId = expiryDialog.dataset.clientId;
+    if (!clientId) {
+      expiryDialog.close();
+      return;
+    }
+
+    const expiryMode = $('#edit-client-expiry').value;
+    const expiresAt = expiryMode === 'date'
+      ? dateInputToExpiry($('#edit-client-expiry-date').value)
+      : null;
+
+    if (expiryMode === 'date' && expiresAt === null) {
+      showNotice(t('expiryDateRequired'), true);
+      return;
+    }
+
+    try {
+      await guarded(() => api.updateClient(clientId, { expiresAt }));
+      expiryDialog.close();
+      await loadClients();
+    } catch (error) {
+      showNotice(errorMessage(error), true);
+      await loadClients().catch(() => {});
+    }
+  });
+
+  $('#cancel-expiry').addEventListener('click', () => {
+    expiryDialog.close();
+  });
+
   $('#show-profile-link').addEventListener('click', async () => {
     let link;
     try { link = await guarded(() => api.exportText(selectedClient.id, 'vpn-link')); } catch { return; }

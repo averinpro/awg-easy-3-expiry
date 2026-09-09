@@ -8,8 +8,9 @@ const { AwgKeyManager } = require('./AwgKeyManager');
 const { assertActiveHomeRemains, normalizeClientPolicy } = require('./ClientPolicy');
 const { changeClientTraffic, assertCurrentPanelPathRemains } = require('./ClientTraffic');
 const { validateState } = require('./StateStore');
+const { normalizeExpiresAt } = require('./ClientExpiry');
 
-const ALLOWED_CHANGES = new Set(['name', 'enabled', 'networkGroup', 'ipv4Enabled', 'ipv6Enabled']);
+const ALLOWED_CHANGES = new Set(['name', 'enabled', 'networkGroup', 'ipv4Enabled', 'ipv6Enabled', 'expiresAt']);
 
 class ClientManager {
   constructor({
@@ -90,7 +91,7 @@ class ClientManager {
     return Object.freeze({ artifacts: nextArtifacts, state: savedState });
   }
 
-  createClient({ name, networkGroup } = {}) {
+  createClient({ name, networkGroup, expiresAt: rawExpiresAt } = {}) {
     return this.serialize(async () => {
       const state = await this.requireState();
       const normalizedName = typeof name === 'string' ? name.trim() : '';
@@ -100,6 +101,7 @@ class ClientManager {
         throw error;
       }
       const policy = normalizeClientPolicy({ networkGroup });
+      const expiresAt = normalizeExpiresAt(rawExpiresAt);
       const addresses = allocateClientAddresses({ server: state.server, clients: state.clients });
       const keys = await this.keyManager.generatePeerKeys();
       const client = {
@@ -109,6 +111,7 @@ class ClientManager {
         ...policy,
         ...addresses,
         ...keys,
+        expiresAt,
       };
       const result = await this.applyState(state, { ...state, clients: [...state.clients, client] });
       return Object.freeze({
@@ -134,9 +137,20 @@ class ClientManager {
       const state = await this.requireState();
       assertActiveHomeRemains(state.clients, clientId, changes);
       const target = state.clients.find((client) => client.id === clientId);
-      const nextClient = changeClientTraffic(target, changes, {
-        ipv6Available: Boolean(state.server.address6 && state.server.ipv6Subnet && target.address6),
-      });
+      const normalizedChanges = { ...changes };
+
+      if ('expiresAt' in normalizedChanges) {
+        normalizedChanges.expiresAt = normalizeExpiresAt(normalizedChanges.expiresAt);
+      }
+
+      const nextClient = {
+        ...changeClientTraffic(target, normalizedChanges, {
+          ipv6Available: Boolean(state.server.address6 && state.server.ipv6Subnet && target.address6),
+        }),
+        expiresAt: 'expiresAt' in normalizedChanges
+          ? normalizedChanges.expiresAt
+          : target.expiresAt ?? null,
+      };
       assertCurrentPanelPathRemains(target, nextClient, remoteAddress);
       const clients = state.clients.map((client) => client.id === clientId ? nextClient : client);
       const result = await this.applyState(state, { ...state, clients });

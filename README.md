@@ -8,6 +8,29 @@ An intentionally small Docker web panel for **AmneziaWG 3.x**. This is an indepe
 
 > Current release: **0.1.4**, with AWG engine **v3.1.20260828**. Existing profiles remain valid. See the [release notes](docs/releases/v0.1.4.md).
 
+## About this fork
+
+This repository is a fork of AWG-Easy 3 with optional per-client expiration management.
+
+### Client expiration
+
+This fork adds:
+
+- optional expiration date for each client;
+- automatic disabling of expired clients;
+- changing and extending expiration from the web panel;
+- expiration information in the client API;
+- automatic expiration checks without restarting the VPN interface;
+- Russian, English, Spanish, Persian and Simplified Chinese UI translations.
+
+Expiration is optional. Existing clients without an `expiresAt` field remain unlimited.
+
+### Migration from AWG-Easy 3
+
+Existing AWG-Easy 3 `state.json` files remain compatible. No client keys or addresses need to be regenerated when upgrading to this fork.
+
+Clients created by older versions without an expiration date are treated as unlimited.
+
 ## At a glance
 
 - Create and export VPN profiles in a browser; manage a panel accessible only inside the VPN.

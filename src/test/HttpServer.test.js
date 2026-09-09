@@ -43,7 +43,7 @@ const fixture = async (t) => {
       return [{ id: 'phone', name: 'Phone' }];
     },
     createClient: async (token, input) => ({ client: { id: 'new', ...input }, vpnLink: 'vpn://share' }),
-    updateClient: async (token, id, input) => ({ id, ...input }),
+    updateClient: async (token, id, input) => { calls.push(['update', token, id, input]); return { id, ...input }; },
     deleteClient: async () => ({ success: true }),
     exportClient: async (token, id, format) => ({
       contentType: 'text/plain; charset=utf-8',
@@ -71,12 +71,21 @@ test('serves versioned session and client routes with security headers', async (
 });
 
 test('supports policy mutation and explicit export routes', async (t) => {
-  const { port } = await fixture(t);
+  const { calls, port } = await fixture(t);
   const updated = await request(port, 'PATCH', '/api/v1/clients/phone', {
     body: { networkGroup: 'home' },
     cookie: 'awg_easy_3_session=valid',
   });
   assert.deepEqual(JSON.parse(updated.body), { id: 'phone', networkGroup: 'home' });
+
+  const expiresAt = 1789038390253;
+  const expiryUpdate = await request(port, 'PATCH', '/api/v1/clients/phone', {
+    body: { expiresAt },
+    cookie: 'awg_easy_3_session=valid',
+  });
+  assert.deepEqual(JSON.parse(expiryUpdate.body), { id: 'phone', expiresAt });
+  assert.deepEqual(calls[0], ['update', 'valid', 'phone', { networkGroup: 'home' }]);
+  assert.deepEqual(calls[1], ['update', 'valid', 'phone', { expiresAt }]);
   const exported = await request(port, 'GET', '/api/v1/clients/phone/export?format=vpn-link', {
     cookie: 'awg_easy_3_session=valid',
   });

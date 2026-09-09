@@ -34,7 +34,7 @@ const fixture = () => {
     clientManager: {
       createClient: async (input) => {
         clientCalls.push(['create', input]);
-        return { client: SECRET_CLIENT, export: { vpnLink: 'vpn://share' } };
+        return { client: { ...SECRET_CLIENT, ...input }, export: { vpnLink: 'vpn://share' } };
       },
       updateClient: async (id, changes) => {
         clientCalls.push(['update', id, changes]);
@@ -73,6 +73,52 @@ test('never exposes client key material in list or mutations', async () => {
   assert.equal(JSON.stringify(created.client).includes('secret'), false);
   const updated = await service.updateClient('signed-token', 'phone', { networkGroup: 'home' });
   assert.equal(JSON.stringify(updated).includes('secret'), false);
+});
+
+test('passes expiration dates through client API without exposing secrets', async () => {
+  const { service, clientCalls } = fixture();
+  const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+
+  const created = await service.createClient('signed-token', {
+    name: 'Temporary phone',
+    expiresAt,
+  });
+
+  const createCall = clientCalls.find((call) => call[0] === 'create');
+  assert.ok(createCall);
+  assert.equal(createCall[1].expiresAt, expiresAt);
+
+  const updated = await service.updateClient('signed-token', 'phone', {
+    expiresAt,
+  });
+
+  const updateCall = clientCalls.find((call) => call[0] === 'update');
+  assert.ok(updateCall);
+  assert.equal(updateCall[1], 'phone');
+  assert.equal(updateCall[2].expiresAt, expiresAt);
+  assert.equal(updated.expiresAt, expiresAt);
+
+  await service.updateClient('signed-token', 'phone', {
+    expiresAt: null,
+  });
+
+  const clearCall = clientCalls.find(
+    (call) => call[0] === 'update' && call[2]?.expiresAt === null,
+  );
+  assert.ok(clearCall);
+  assert.equal(JSON.stringify(created).includes('private-secret'), false);
+});
+
+test('publicClient exposes expiration date', () => {
+  const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+
+  const result = publicClient({
+    ...SECRET_CLIENT,
+    expiresAt,
+  });
+
+  assert.equal(result.expiresAt, expiresAt);
+  assert.equal(JSON.stringify(result).includes('private-secret'), false);
 });
 
 test('requires authentication for every client and password operation', async () => {

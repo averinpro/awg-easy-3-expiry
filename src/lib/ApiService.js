@@ -16,6 +16,7 @@ const publicClient = (client) => Object.freeze({
   ...clientTraffic(client),
   ipv6Available: Boolean(client.address6),
   networkGroup: client.networkGroup,
+  expiresAt: client.expiresAt ?? null,
   address4: client.address4,
   ...(client.address6 ? { address6: client.address6 } : {}),
 });

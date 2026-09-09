@@ -8,6 +8,7 @@ const { buildAwgArtifacts } = require('./AwgArtifacts');
 const { BootstrapInstaller } = require('./BootstrapInstaller');
 const { ClientManager } = require('./ClientManager');
 const { ClientDiagnostics } = require('./ClientDiagnostics');
+const { ClientExpiryService } = require('./ClientExpiryService');
 const { DiscoveryRelay } = require('./DiscoveryRelay');
 const { HttpServer } = require('./HttpServer');
 const { PasswordManager } = require('./PasswordManager');
@@ -41,6 +42,7 @@ class Application {
     this.http = null;
     this.http6 = null;
     this.discovery = null;
+    this.expiryService = null;
     this.state = null;
   }
 
@@ -115,6 +117,13 @@ class Application {
         applier: this.applier,
         onStateChanged: (nextState) => this.discovery.refresh(nextState),
       });
+      const expiryService = new ClientExpiryService({
+        store: this.store,
+        clientManager,
+      });
+      this.expiryService = expiryService;
+      await expiryService.start();
+
       const diagnostics = new ClientDiagnostics({ store: this.store, runner: this.runner });
       const api = new ApiService({ store: this.store, passwordManager, sessionManager, clientManager, diagnostics });
       this.http = this.httpFactory({ api, publicDirectory: this.publicDirectory });
@@ -140,6 +149,7 @@ class Application {
     const errors = [];
     if (this.http) await this.http.close().catch((error) => errors.push(error));
     if (this.http6) await this.http6.close().catch((error) => errors.push(error));
+    if (this.expiryService) await this.expiryService.stop().catch((error) => errors.push(error));
     if (this.discovery) await this.discovery.stop().catch((error) => errors.push(error));
     if (this.state) {
       await this.applier.down({ interfaceName: this.state.server.interfaceName }).catch((error) => errors.push(error));
@@ -147,6 +157,7 @@ class Application {
     this.http = null;
     this.http6 = null;
     this.discovery = null;
+    this.expiryService = null;
     this.state = null;
     if (errors.length > 0) throw new AggregateError(errors, 'Application shutdown failed');
   }
