@@ -104,10 +104,16 @@ class ClientManager {
       const expiresAt = normalizeExpiresAt(rawExpiresAt);
       const addresses = allocateClientAddresses({ server: state.server, clients: state.clients });
       const keys = await this.keyManager.generatePeerKeys();
+      const hasEnabledHome = state.clients.some(
+        (item) => item.enabled && item.networkGroup === 'home'
+      );
+      const expiredAtCreation = expiresAt !== null && expiresAt <= Date.now();
+      const enabled = !expiredAtCreation || (policy.networkGroup === 'home' && !hasEnabledHome);
+
       const client = {
         id: this.idGenerator(),
         name: normalizedName,
-        enabled: true,
+        enabled,
         ...policy,
         ...addresses,
         ...keys,
@@ -143,13 +149,27 @@ class ClientManager {
         normalizedChanges.expiresAt = normalizeExpiresAt(normalizedChanges.expiresAt);
       }
 
+      const nextExpiresAt = 'expiresAt' in normalizedChanges
+        ? normalizedChanges.expiresAt
+        : target.expiresAt ?? null;
+
+      const expiresNow = nextExpiresAt !== null && nextExpiresAt <= Date.now();
+      const isLastActiveHome = target.enabled
+        && target.networkGroup === 'home'
+        && state.clients.filter(
+          (client) => client.enabled && client.networkGroup === 'home'
+        ).length === 1;
+
       const nextClient = {
-        ...changeClientTraffic(target, normalizedChanges, {
+        ...changeClientTraffic(target, {
+          ...normalizedChanges,
+          ...(expiresNow && !isLastActiveHome
+            ? { enabled: false }
+            : {}),
+        }, {
           ipv6Available: Boolean(state.server.address6 && state.server.ipv6Subnet && target.address6),
         }),
-        expiresAt: 'expiresAt' in normalizedChanges
-          ? normalizedChanges.expiresAt
-          : target.expiresAt ?? null,
+        expiresAt: nextExpiresAt,
       };
       assertCurrentPanelPathRemains(target, nextClient, remoteAddress);
       const clients = state.clients.map((client) => client.id === clientId ? nextClient : client);

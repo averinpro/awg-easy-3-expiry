@@ -8,7 +8,7 @@ const test = require('node:test');
 
 // Small DOM fixture for the actual app script; native details/layout are also
 // exercised in the synthetic browser preview, without touching a live VPN.
-const setup = async () => {
+const setup = async (clientChanges = {}) => {
   let document;
   const element = (selector = '') => {
     const classes = new Set();
@@ -20,6 +20,7 @@ const setup = async () => {
         toggle: (name, enabled) => enabled ? classes.add(name) : classes.delete(name),
       },
       addEventListener: (name, handler) => { value.handlers[name] = handler; },
+      setAttribute: (name, attributeValue) => { value[name] = attributeValue; },
       matches: (candidate) => candidate === selector,
       focus: () => { document.activeElement = value; },
     };
@@ -56,13 +57,18 @@ const setup = async () => {
   };
   let rows = ['a', 'b'].map((id) => ({ id, name: id, address4: `10.8.0.${id === 'a' ? 2 : 3}`,
     address6: `fd00::${id === 'a' ? 2 : 3}`, networkGroup: 'home', enabled: true,
-    ipv4Enabled: true, ipv6Enabled: true, ipv6Available: true }));
+    ipv4Enabled: true, ipv6Enabled: true, ipv6Available: true, expiresAt: null }));
+  rows[0] = { ...rows[0], ...clientChanges };
+
   let failure;
   let refreshFailure = false;
   const calls = [];
   const api = {
     session: async () => ({ authenticated: true, language: 'en' }),
-    clients: async () => { if (refreshFailure) throw new Error('Refresh failed'); return rows.map((row) => ({ ...row })); },
+    clients: async () => {
+      if (refreshFailure) throw new Error('Refresh failed');
+      return rows.map((row) => ({ ...row }));
+    },
     network: async () => ({}),
     updateClient: async (id, changes) => {
       calls.push({ id, changes: { ...changes } });
@@ -70,7 +76,9 @@ const setup = async () => {
       rows = rows.map((row) => {
         if (row.id !== id) return row;
         const next = { ...row, ...changes };
-        next.enabled = next.ipv4Enabled || next.ipv6Enabled;
+        if (!Object.prototype.hasOwnProperty.call(changes, 'enabled')) {
+          next.enabled = next.ipv4Enabled || next.ipv6Enabled;
+        }
         return next;
       });
       return { ...rows.find((row) => row.id === id) };
@@ -93,8 +101,62 @@ const setup = async () => {
       control.focus();
       await control.handlers.change();
     },
+    click: async (selector, index = 0) => {
+      const control = container.cards[index].querySelector(selector);
+      await control.handlers.click();
+    },
+    setClient: (index, changes) => {
+      rows[index] = { ...rows[index], ...changes };
+    },
   };
 };
+
+test('enabled client can be manually stopped and shows Start afterwards', async () => {
+  const f = await setup();
+
+  const button = f.card().querySelector('.client-toggle');
+
+  assert.equal(button.textContent, 'stop');
+  assert.equal(button.disabled, false);
+
+  await f.click('.client-toggle');
+
+  assert.deepEqual(f.calls[0].changes, { enabled: false });
+  assert.equal(f.card().querySelector('.client-toggle').textContent, 'start');
+  assert.equal(f.card().querySelector('.client-toggle').disabled, false);
+});
+
+test('stopped client with a future expiration can be started manually', async () => {
+  const f = await setup();
+
+  await f.click('.client-toggle');
+
+  assert.deepEqual(f.calls[0].changes, { enabled: false });
+
+  await f.click('.client-toggle');
+
+  assert.deepEqual(f.calls[1].changes, { enabled: true });
+  assert.equal(f.card().querySelector('.client-toggle').textContent, 'stop');
+});
+
+test('expired stopped client cannot be started manually', async () => {
+  const expiredAt = Date.now() - 60_000;
+  const f = await setup({
+    enabled: false,
+    expiresAt: expiredAt,
+  });
+
+  const button = f.card().querySelector('.client-toggle');
+
+  assert.equal(button.textContent, 'start');
+  assert.equal(button.disabled, true);
+
+  const callsBefore = f.calls.length;
+
+  await f.click('.client-toggle');
+
+  assert.equal(f.calls.length, callsBefore);
+});
 
 test('card sections start closed and retain independent open states through family updates', async () => {
   const f = await setup();

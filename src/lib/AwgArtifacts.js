@@ -23,9 +23,11 @@ const buildAwgArtifacts = ({ server, clients }) => {
 
   const enabledClients = clients.filter((client) => clientTraffic(client).enabled);
   const expiredClients = clients.filter((client) => isExpired(client.expiresAt));
+  const activeClients = enabledClients.filter((client) => !isExpired(client.expiresAt));
   const runtimeClients = [...new Map([...enabledClients, ...expiredClients].map((client) => [client.id, client])).values()];
-  const activeHomes = enabledClients.filter((client) => client.networkGroup === 'home');
-  if (activeHomes.length === 0) throw new Error('At least one enabled home client is required');
+  const enabledHomes = enabledClients.filter((client) => client.networkGroup === 'home');
+  const activeHomes = activeClients.filter((client) => client.networkGroup === 'home');
+  if (enabledHomes.length === 0) throw new Error('At least one enabled home client is required');
 
   const serverHasIPv6 = Boolean(server.ipv6Subnet && server.address6);
   const serverAddresses = [
@@ -56,12 +58,12 @@ const buildAwgArtifacts = ({ server, clients }) => {
     portalAddress4: server.address4,
     home4: activeHomes.filter((client) => clientTraffic(client).ipv4Enabled).map((client) => client.address4),
     expired4: expiredClients.filter((client) => client.address4).map((client) => client.address4),
-    guest4: enabledClients.filter((client) => client.networkGroup === 'guest' && clientTraffic(client).ipv4Enabled)
+    guest4: activeClients.filter((client) => client.networkGroup === 'guest' && clientTraffic(client).ipv4Enabled)
       .map((client) => client.address4),
     home6: serverHasIPv6 ? activeHomes.filter((client) => clientTraffic(client).ipv6Enabled)
       .map((client) => client.address6).filter(Boolean) : [],
     guest6: serverHasIPv6
-      ? enabledClients.filter((client) => client.networkGroup === 'guest' && clientTraffic(client).ipv6Enabled)
+      ? activeClients.filter((client) => client.networkGroup === 'guest' && clientTraffic(client).ipv6Enabled)
         .map((client) => client.address6).filter(Boolean)
       : [],
   });

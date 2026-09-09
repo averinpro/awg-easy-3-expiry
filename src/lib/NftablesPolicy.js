@@ -77,7 +77,11 @@ const renderNftablesPolicy = ({
   if (typeof nat66 !== 'boolean') throw new TypeError('nat66 must be a boolean');
   if (nat66 && !subnet6) throw new TypeError('nat66 requires ipv6Subnet');
 
-  if (normalizedHome4.length === 0 && (!subnet6 || normalizedHome6.length === 0)) {
+  if (
+    normalizedHome4.length === 0
+    && (!subnet6 || normalizedHome6.length === 0)
+    && normalizedExpired4.length === 0
+  ) {
     throw new TypeError('At least one home peer with a permitted IP family is required');
   }
   if (!subnet6 && (normalizedHome6.length || normalizedGuest6.length)) {

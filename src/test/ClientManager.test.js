@@ -150,6 +150,93 @@ test('changing expiration does not disable the last active home client', async (
   assert.equal(result.client.expiresAt, expiresAt);
 });
 
+test('changing expiration to the past disables a guest immediately', async () => {
+  const { manager, getState } = fixture();
+  const expiresAt = Date.now() - 60 * 1000;
+
+  const result = await manager.createClient({
+    name: 'Temporary guest',
+    expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+  });
+
+  assert.equal(result.client.enabled, true);
+
+  const updated = await manager.updateClient('new-client', {
+    expiresAt,
+  });
+
+  assert.equal(updated.client.enabled, false);
+  assert.equal(updated.client.expiresAt, expiresAt);
+  assert.equal(getState().clients[1].enabled, false);
+});
+
+test('manual stop preserves a future expiration date', async () => {
+  const { manager } = fixture();
+  const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+
+  await manager.createClient({
+    name: 'Manual stop guest',
+    expiresAt,
+  });
+
+  const result = await manager.updateClient('new-client', {
+    enabled: false,
+  });
+
+  assert.equal(result.client.enabled, false);
+  assert.equal(result.client.expiresAt, expiresAt);
+});
+
+test('manual start works when the expiration date is still in the future', async () => {
+  const { manager } = fixture();
+  const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+
+  await manager.createClient({
+    name: 'Restartable guest',
+    expiresAt,
+  });
+
+  await manager.updateClient('new-client', {
+    enabled: false,
+  });
+
+  const result = await manager.updateClient('new-client', {
+    enabled: true,
+  });
+
+  assert.equal(result.client.enabled, true);
+  assert.equal(result.client.expiresAt, expiresAt);
+});
+
+test('manual start cannot reactivate an expired client', async () => {
+  const { manager } = fixture();
+
+  await manager.createClient({
+    name: 'Expired guest',
+    expiresAt: Date.now() - 60 * 1000,
+  });
+
+  const result = await manager.updateClient('new-client', {
+    enabled: true,
+  });
+
+  assert.equal(result.client.enabled, false);
+  assert.ok(result.client.expiresAt <= Date.now());
+});
+
+test('expired last home client remains enabled', async () => {
+  const { manager } = fixture();
+  const expiresAt = Date.now() - 60 * 1000;
+
+  const result = await manager.updateClient('home-admin', {
+    expiresAt,
+  });
+
+  assert.equal(result.client.enabled, true);
+  assert.equal(result.client.networkGroup, 'home');
+  assert.equal(result.client.expiresAt, expiresAt);
+});
+
 test('protects the last active home client from update and deletion', async () => {
   const { manager } = fixture();
   await assert.rejects(manager.updateClient('home-admin', { networkGroup: 'guest' }), /home client/);

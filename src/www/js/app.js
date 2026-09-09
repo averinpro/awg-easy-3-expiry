@@ -227,6 +227,32 @@
     node.querySelector('.show-profile').addEventListener('click', () => openProfile(client));
     node.querySelector('.expiry-edit').addEventListener('click', () => openExpiry(client));
 
+    const clientToggle = node.querySelector('.client-toggle');
+    const clientExpired = client.expiresAt !== null
+      && client.expiresAt !== undefined
+      && client.expiresAt <= Date.now();
+
+    clientToggle.textContent = t(client.enabled ? 'stop' : 'start');
+    clientToggle.setAttribute('data-i18n', client.enabled ? 'stop' : 'start');
+    clientToggle.disabled = !client.enabled && clientExpired;
+
+    clientToggle.addEventListener('click', async () => {
+      if (!client.enabled && clientExpired) {
+        showNotice(t('expiredCannotStart'), true);
+        return;
+      }
+
+      try {
+        await guarded(() => api.updateClient(client.id, {
+          enabled: !client.enabled,
+        }));
+        await loadClients();
+      } catch (error) {
+        showNotice(errorMessage(error), true);
+        await loadClients().catch(() => {});
+      }
+    });
+
     node.querySelector('.expiry-plus-month').addEventListener('click', async () => {
       const base = client.expiresAt && client.expiresAt > Date.now() ? client.expiresAt : Date.now();
       const expiresAt = addCalendarMonth(base);
