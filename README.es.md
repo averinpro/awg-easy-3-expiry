@@ -2,6 +2,17 @@
 
 [English](README.md) | [Русский](README.ru.md) | [فارسی](README.fa.md) | [Español](README.es.md) | [简体中文](README.zh-CN.md)
 
+## ⚡ Nuevo: caducidad por cliente
+
+Esta versión añade una función importante de gestión: cada cliente VPN puede tener una fecha de caducidad opcional.
+
+- Desactivación automática cuando termina el acceso.
+- Configuración, cambio, ampliación o eliminación de la fecha desde el panel web.
+- Los clientes existentes siguen siendo compatibles y permanecen sin caducidad si no tienen una fecha configurada.
+- La caducidad se aplica automáticamente sin reiniciar la interfaz VPN.
+
+Este es un fork funcional de AWG-Easy 3 centrado en la gestión sencilla de clientes AmneziaWG 3.1.
+
 ## Qué es AWG-Easy 3
 
 Un panel Docker sencillo para **AmneziaWG 3.x**. Es un fork independiente y no comercial de [JohnnyVBut/awg-easy](https://github.com/JohnnyVBut/awg-easy), reconstruido para instalaciones limpias de AWG 3.x.

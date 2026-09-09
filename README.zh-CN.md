@@ -2,6 +2,17 @@
 
 [English](README.md) | [Русский](README.ru.md) | [فارسی](README.fa.md) | [Español](README.es.md) | [简体中文](README.zh-CN.md)
 
+## ⚡ 新功能：按客户端设置到期时间
+
+此版本增加了一项重要的客户端管理功能：可以为每个 VPN 客户端设置可选的到期日期。
+
+- 客户端访问到期后自动禁用。
+- 可直接在 Web 面板中设置、修改、延长或取消到期日期。
+- 现有客户端保持兼容；未设置到期日期的客户端继续保持永久有效。
+- 到期处理会自动完成，无需重启 VPN 接口。
+
+这是 AWG-Easy 3 的功能性 fork，专注于简单的 AmneziaWG 3.1 客户端管理。
+
 ## AWG-Easy 3 是什么
 
 一个面向 **AmneziaWG 3.x** 的轻量 Docker 管理面板。本项目是 [JohnnyVBut/awg-easy](https://github.com/JohnnyVBut/awg-easy) 的独立、非商业分支，专为全新安装 AWG 3.x 而重新构建。

@@ -2,6 +2,17 @@
 
 [English](README.md) | [Русский](README.ru.md) | [فارسی](README.fa.md) | [Español](README.es.md) | [简体中文](README.zh-CN.md)
 
+## ⚡ New: Per-client expiration
+
+This fork adds an important client-management feature: every VPN client can have an optional expiration date.
+
+- Automatically disable clients when their access expires.
+- Set, change, extend or remove an expiration date from the web panel.
+- Existing clients remain compatible and are treated as unlimited unless an expiration date is set.
+- Expiration is applied automatically without restarting the VPN interface.
+
+This is a functional fork of AWG-Easy 3 focused on simple AmneziaWG 3.1 client management.
+
 ## What is AWG-Easy 3?
 
 An intentionally small Docker web panel for **AmneziaWG 3.x**. This is an independent, non-commercial fork of [JohnnyVBut/awg-easy](https://github.com/JohnnyVBut/awg-easy), rebuilt around clean AWG 3.x installations.
